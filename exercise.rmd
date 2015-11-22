@@ -1,0 +1,198 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Jitendra Patel"
+output: html_document
+---
+
+### Objective: 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+### Goal and Submission
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+1. Your submission should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders :-).
+2. You should also apply your machine learning algorithm to the 20 test cases available in the test data above. Please submit your predictions in appropriate format to the programming assignment for automated grading. See the programming assignment for additional details. 
+
+#### Reproducibility and Libraries
+In order to reproduce the same results, you need a certain set of packages, as well as setting a pseudo random seed.
+````{r, eval=FALSE}
+library(caret)
+library(randomForest)
+````
+#### Getting Data and Loading to memory
+````{r}
+trainUrl <- "http:///d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainingRaw <- read.csv(file="pml-training.csv", header=TRUE, as.is = TRUE, stringsAsFactors = FALSE, sep=',', na.strings=c('NA','','#DIV/0!'))
+testingRaw <- read.csv(file="pml-testing.csv", header=TRUE, as.is = TRUE, stringsAsFactors = FALSE, sep=',', na.strings=c('NA','','#DIV/0!'))
+
+trainingRaw$classe <- as.factor(trainingRaw$classe)  
+````
+
+#### Cleaning variables
+After investigating all the variables of the sets, it's possible to see that there are a lot of values NA or useless or empty variables for the prediction. It's request to compute the prediction only on the accelerometers values of belt, forearm, arm and dumbell. So, the non-accelerometer measures are discard with the useless variables.
+
+````{r, eval=FALSE}
+NAindex <- apply(trainingRaw,2,function(x) {sum(is.na(x))}) 
+trainingRaw <- trainingRaw[,which(NAindex == 0)]
+NAindex <- apply(testingRaw,2,function(x) {sum(is.na(x))}) 
+testingRaw <- testingRaw[,which(NAindex == 0)]
+````
+#### Preprocessing variables
+````{r, eval=FALSE}
+
+v <- which(lapply(trainingRaw, class) %in% "numeric")
+
+preObj <-preProcess(trainingRaw[,v],method=c('knnImpute', 'center', 'scale'))
+trainLess1 <- predict(preObj, trainingRaw[,v])
+trainLess1$classe <- trainingRaw$classe
+
+testLess1 <-predict(preObj,testingRaw[,v])
+````
+#### Removing the non zero variables
+Removing the variables with values near zero, that means that they have not so much meaning in the predictions
+````{r, eval=FALSE}
+nzv <- nearZeroVar(trainLess1,saveMetrics=TRUE)
+trainLess1 <- trainLess1[,nzv$nzv==FALSE]
+
+nzv <- nearZeroVar(testLess1,saveMetrics=TRUE)
+testLess1 <- testLess1[,nzv$nzv==FALSE]
+````
+
+#### Create cross validation set
+The training set is divided in two parts, one for training and the other for cross validation
+
+````{r, eval=FALSE}
+set.seed(12356)
+
+inTrain = createDataPartition(trainLess1$classe, p = 3/4, list=FALSE)
+training = trainLess1[inTrain,]
+crossValidation = trainLess1[-inTrain,]
+````
+
+#### Train model
+Train model with random forest due to its highly accuracy rate. The model is build on a training set of 28 variables from the initial 160. Cross validation is used as train control method.
+````{r, eval=FALSE}
+modFit <- train(classe ~., method="rf", data=training, trControl=trainControl(method='cv'), number=5, allowParallel=TRUE )
+
+````
+````
+Random Forest 
+
+14718 samples
+   27 predictor
+    5 classes: 'A', 'B', 'C', 'D', 'E' 
+
+No pre-processing
+Resampling: Cross-Validated (10 fold) 
+Summary of sample sizes: 13246, 13248, 13245, 13247, 13246, 13245, ... 
+Resampling results across tuning parameters:
+
+  mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
+   2    0.9931375  0.9913192  0.001517843  0.001919988
+  14    0.9928663  0.9909766  0.003092620  0.003911705
+  27    0.9902162  0.9876245  0.002972839  0.003758753
+
+Accuracy was used to select the optimal model using  the largest value.
+The final value used for the model was mtry = 2. 
+````
+
+#### Accuracy on training set and cross validation set
+Following the computation on the accuracy of trainig and cross validation set
+
+Training set:
+````{r, eval=FALSE}
+trainingPred <- predict(modFit, training)
+confusionMatrix(trainingPred, training$classe)
+````
+````
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    A    B    C    D    E
+         A 4185    0    0    0    0
+         B    0 2848    0    0    0
+         C    0    0 2567    0    0
+         D    0    0    0 2412    0
+         E    0    0    0    0 2706
+
+Overall Statistics
+                                     
+               Accuracy : 1          
+                 95% CI : (0.9997, 1)
+    No Information Rate : 0.2843     
+    P-Value [Acc > NIR] : < 2.2e-16  
+                                     
+                  Kappa : 1          
+ Mcnemar's Test P-Value : NA         
+
+Statistics by Class:
+
+                     Class: A Class: B Class: C Class: D Class: E
+Sensitivity            1.0000   1.0000   1.0000   1.0000   1.0000
+Specificity            1.0000   1.0000   1.0000   1.0000   1.0000
+Pos Pred Value         1.0000   1.0000   1.0000   1.0000   1.0000
+Neg Pred Value         1.0000   1.0000   1.0000   1.0000   1.0000
+Prevalence             0.2843   0.1935   0.1744   0.1639   0.1839
+Detection Rate         0.2843   0.1935   0.1744   0.1639   0.1839
+Detection Prevalence   0.2843   0.1935   0.1744   0.1639   0.1839
+Balanced Accuracy      1.0000   1.0000   1.0000   1.0000   1.0000
+````
+
+Cross validation set
+````{r, eval=FALSE}
+cvPred <- predict(modFit, crossValidation)
+confusionMatrix(cvPred, crossValidation$classe)
+````
+````
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    A    B    C    D    E
+         A 1395    2    0    0    2
+         B    0  946    2    0    0
+         C    0    1  850    6    0
+         D    0    0    3  797    3
+         E    0    0    0    1  896
+
+Overall Statistics
+                                          
+               Accuracy : 0.9959          
+                 95% CI : (0.9937, 0.9975)
+    No Information Rate : 0.2845          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.9948          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: A Class: B Class: C Class: D Class: E
+Sensitivity            1.0000   0.9968   0.9942   0.9913   0.9945
+Specificity            0.9989   0.9995   0.9983   0.9985   0.9998
+Pos Pred Value         0.9971   0.9979   0.9918   0.9925   0.9989
+Neg Pred Value         1.0000   0.9992   0.9988   0.9983   0.9988
+Prevalence             0.2845   0.1935   0.1743   0.1639   0.1837
+Detection Rate         0.2845   0.1929   0.1733   0.1625   0.1827
+Detection Prevalence   0.2853   0.1933   0.1748   0.1637   0.1829
+Balanced Accuracy      0.9994   0.9982   0.9962   0.9949   0.9971
+````
+
+## Results and Files to submit as Answers:
+Finally, here is the Predictions on the real testing set
+````{r, eval=FALSE}
+testingPred <- predict(modFit, testLess1)
+````
+Function to generate files with predictions to submit Answers for Assignment:
+````{r, eval=FALSE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(testingPred)
+````
